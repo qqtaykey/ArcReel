@@ -246,6 +246,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const hasDraft = Object.keys(draft).length > 0;
@@ -257,6 +258,12 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
     onSaved?.();
   }, [providerId, onSaved]);
 
+  // 用户编辑草稿时同步清掉上一次保存失败的错误，避免旧文案滞留误导
+  const handleDraftEdit = useCallback<React.Dispatch<React.SetStateAction<Record<string, string>>>>((action) => {
+    setSaveError(null);
+    setDraft(action);
+  }, []);
+
   useEffect(() => {
     let disposed = false;
     // providerId 变化时重置草稿/详情/错误后再异步拉取，属于动作驱动重置
@@ -264,6 +271,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
     setDraft({});
     setDetail(null);
     setLoadError(null);
+    setSaveError(null);
     voidCall(
       API.getProviderConfig(providerId)
         .then((res) => {
@@ -281,6 +289,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
   const handleSave = useCallback(async () => {
     if (Object.keys(draft).length === 0) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const patch: Record<string, string | null> = {};
       for (const [key, value] of Object.entries(draft)) {
@@ -291,6 +300,9 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
       setDetail(updated);
       setDraft({});
       onSaved?.();
+    } catch (err) {
+      // 后端校验失败（如 Max Workers 非法值）返回已本地化的 detail，直接展示
+      setSaveError(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -387,10 +399,23 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
           {showAdvanced && (
             <div className="mt-3 space-y-4">
               {detail.fields.map((field) => (
-                <FieldEditor key={field.key} field={field} draft={draft} setDraft={setDraft} />
+                <FieldEditor key={field.key} field={field} draft={draft} setDraft={handleDraftEdit} />
               ))}
               {hasDraft && (
                 <div className="pt-1">
+                  {saveError && (
+                    <p
+                      aria-live="polite"
+                      className="mb-2 rounded-[6px] px-2.5 py-1.5 text-[11.5px]"
+                      style={{
+                        background: "var(--color-warm-tint)",
+                        color: "var(--color-warm-bright)",
+                        border: "1px solid var(--color-warm-ring)",
+                      }}
+                    >
+                      {saveError}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={() => void handleSave()}

@@ -22,7 +22,7 @@ from starlette.responses import Response
 from lib.app_data_dir import app_data_dir
 from lib.config.registry import PROVIDER_REGISTRY
 from lib.config.repository import mask_secret
-from lib.config.service import ConfigService
+from lib.config.service import ConfigService, ProviderConfigValueError
 from lib.config.url_utils import normalize_base_url
 from lib.db import get_async_session
 from lib.db.base import dt_to_iso
@@ -56,6 +56,7 @@ _FIELD_META: dict[str, dict[str, str]] = {
     "request_gap": {"label": "Request Gap (sec)", "type": "number"},
     "image_max_workers": {"label": "Image Max Workers", "type": "number"},
     "video_max_workers": {"label": "Video Max Workers", "type": "number"},
+    "audio_max_workers": {"label": "Audio Max Workers", "type": "number"},
 }
 
 
@@ -309,7 +310,15 @@ async def patch_provider_config(
         if value is None:
             await svc.delete_provider_config(provider_id, key, flush=False)
         else:
-            await svc.set_provider_config(provider_id, key, value, flush=False)
+            try:
+                await svc.set_provider_config(provider_id, key, value, flush=False)
+            except ProviderConfigValueError as exc:
+                # 错误文案中的字段名换成 UI 同款 label（如 Image Max Workers），与表单展示一致
+                params = dict(exc.params)
+                meta = _FIELD_META.get(exc.key)
+                if meta is not None:
+                    params["field"] = meta["label"]
+                raise HTTPException(status_code=422, detail=_t(exc.code, **params)) from exc
 
     await session.commit()
 
